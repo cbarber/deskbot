@@ -140,6 +140,7 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 				Allow: discordgo.PermissionManageChannels,
 			},
 		},
+		ParentID: deskChannel,
 		Position: 0,
 	})
 	if err != nil {
