@@ -148,7 +148,13 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	_, err = s.ChannelMessageSend(event.GuildID, fmt.Sprintf("Created a desk for %s", name))
+	guild, err := s.Guild(event.GuildID)
+	if err != nil {
+		fmt.Println("Failed to find guild", err)
+		return
+	}
+
+	_, err = s.ChannelMessageSend(guild.SystemChannelID, fmt.Sprintf("Created a desk for %s", name))
 	if err != nil {
 		fmt.Println("Failed to send created desk message", err)
 	}
