@@ -140,7 +140,7 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 				Allow: discordgo.PermissionManageChannels,
 			},
 		},
-		Position: -1,
+		Position: 0,
 	})
 	if err != nil {
 		fmt.Println("Failed to create channel", err)
