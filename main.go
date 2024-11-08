@@ -12,8 +12,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var token string
-var guildToDeskCategory *sync.Map
+var (
+	token               string
+	guildToDeskCategory *sync.Map
+)
 
 func init() {
 	flag.StringVar(&token, "t", "", "Bot Token")
@@ -62,13 +64,13 @@ func ready(s *discordgo.Session, event *discordgo.Ready) {
 }
 
 func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
-	if event.Guild.Unavailable {
+	if event.Unavailable {
 		return
 	}
 
-	fmt.Println("guildCreate", event.Guild.Name)
+	fmt.Println("guildCreate", event.Name)
 
-	defaultChannelId := event.Guild.SystemChannelID
+	defaultChannelId := event.SystemChannelID
 
 	if defaultChannelId == "" {
 		fmt.Println("Failed to find default channel for guild")
@@ -76,7 +78,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 	}
 
 	var deskCategoryId string
-	for _, channel := range event.Guild.Channels {
+	for _, channel := range event.Channels {
 		if strings.ToLower(channel.Name) == "desks" && channel.Type == discordgo.ChannelTypeGuildCategory {
 			deskCategoryId = channel.ID
 			break
@@ -90,7 +92,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 		message = "Deskbot failed to find the DESKS category :("
 	}
 
-	guildToDeskCategory.Store(event.Guild.ID, deskCategoryId)
+	guildToDeskCategory.Store(event.ID, deskCategoryId)
 
 	_, err := s.ChannelMessageSend(defaultChannelId, message)
 	if err != nil {
@@ -99,7 +101,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 }
 
 func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
-	name := event.Member.Nick
+	name := event.Nick
 	if len(name) == 0 {
 		name = event.User.Username
 	}
@@ -134,9 +136,9 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		Name: name,
 		Type: discordgo.ChannelTypeGuildVoice,
 		PermissionOverwrites: []*discordgo.PermissionOverwrite{
-			&discordgo.PermissionOverwrite{
-				ID: event.User.ID,
-				Type: discordgo.PermissionOverwriteTypeMember,
+			{
+				ID:    event.User.ID,
+				Type:  discordgo.PermissionOverwriteTypeMember,
 				Allow: discordgo.PermissionManageChannels,
 			},
 		},
