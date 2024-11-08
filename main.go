@@ -120,15 +120,15 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	var deskChannel string
+	var existingDeskChannelId string
 	for _, channel := range channels {
 		if channel.ParentID == deskCategoryId && (channel.Name == name) {
-			deskChannel = channel.ID
+			existingDeskChannelId = channel.ID
 			break
 		}
 	}
 
-	if deskChannel != "" {
+	if existingDeskChannelId != "" {
 		return
 	}
 
