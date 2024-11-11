@@ -85,18 +85,10 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 		}
 	}
 
-	var message string
 	if deskCategoryId != "" {
-		message = "Deskbot found the DESKS category and is ready"
+		fmt.Printf("Deskbot found the DESKS category in %v and is ready\n", event.Name)
 	} else {
-		message = "Deskbot failed to find the DESKS category :("
-	}
-
-	guildToDeskCategory.Store(event.ID, deskCategoryId)
-
-	_, err := s.ChannelMessageSend(defaultChannelId, message)
-	if err != nil {
-		fmt.Println("Failed to send join message", err)
+		fmt.Printf("Deskbot failed to find the DESKS category in %v\n", event.Name)
 	}
 }
 
