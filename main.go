@@ -86,7 +86,8 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 	}
 
 	if deskCategoryId != "" {
-		fmt.Printf("Deskbot found the DESKS category in %v and is ready\n", event.Name)
+		fmt.Printf("Deskbot found the DESKS category in %v. Storing (guildId: %s, deskCategoryId: %s)\n", event.Name, event.ID, deskCategoryId)
+		guildToDeskCategory.Store(event.ID, deskCategoryId)
 	} else {
 		fmt.Printf("Deskbot failed to find the DESKS category in %v\n", event.Name)
 	}
