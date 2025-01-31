@@ -91,6 +91,31 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 	} else {
 		fmt.Printf("Deskbot failed to find the DESKS category in %v\n", event.Name)
 	}
+
+	// TODO: paginate when mojo passes 1000 employees
+	members, err := s.GuildMembers(event.ID, "", 1000)
+	if err != nil {
+		fmt.Printf("Deskbot failed to fetch the first 1000 member of %s\n", event.Name)
+		return
+	}
+
+	for _, member := range members {
+		if member.User.Bot {
+			continue
+		}
+		if member.User.System {
+			continue
+		}
+
+		deskChannelId := findUserDeskChannelId(event.Channels, deskCategoryId, member.User.ID)
+		if deskChannelId == "" {
+			fmt.Printf("Missing desk channel for user %s\n", member.DisplayName())
+			err := createDeskChannel(s, event.ID, member.User.ID, member.DisplayName(), deskCategoryId)
+			if err != nil {
+				fmt.Printf("Failed to create desk channel for user %s: %v\n", member.DisplayName(), err)
+			}
+		}
+	}
 }
 
 func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
