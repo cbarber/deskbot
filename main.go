@@ -101,11 +101,12 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 
 	fmt.Println("guildMemberAdd", name)
 
-	deskCategoryId, ok := guildToDeskCategory.Load(event.GuildID)
+	maybeDeskCategoryId, ok := guildToDeskCategory.Load(event.GuildID)
 	if !ok {
 		fmt.Println("Failed to find deskCategory for guildId", event.GuildID)
 		return
 	}
+	deskCategoryId := maybeDeskCategoryId.(string)
 
 	channels, err := s.GuildChannels(event.GuildID)
 	if err != nil {
@@ -125,19 +126,7 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	_, err = s.GuildChannelCreateComplex(event.GuildID, discordgo.GuildChannelCreateData{
-		Name: name,
-		Type: discordgo.ChannelTypeGuildVoice,
-		PermissionOverwrites: []*discordgo.PermissionOverwrite{
-			{
-				ID:    event.User.ID,
-				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionManageChannels,
-			},
-		},
-		ParentID: deskCategoryId.(string),
-		Position: 0,
-	})
+	err = createDeskChannel(s, event.GuildID, event.User.ID, name, deskCategoryId)
 	if err != nil {
 		fmt.Println("Failed to create channel", err)
 		return
@@ -153,4 +142,21 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 	if err != nil {
 		fmt.Println("Failed to send created desk message", err)
 	}
+}
+
+func createDeskChannel(s *discordgo.Session, guildID string, userID string, name string, deskCategoryId string) error {
+	_, err := s.GuildChannelCreateComplex(guildID, discordgo.GuildChannelCreateData{
+		Name: name,
+		Type: discordgo.ChannelTypeGuildVoice,
+		PermissionOverwrites: []*discordgo.PermissionOverwrite{
+			{
+				ID:    userID,
+				Type:  discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionManageChannels,
+			},
+		},
+		ParentID: deskCategoryId,
+		Position: 0,
+	})
+	return err
 }
