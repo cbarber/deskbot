@@ -114,13 +114,7 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	var existingDeskChannelId string
-	for _, channel := range channels {
-		if channel.ParentID == deskCategoryId && (channel.Name == name) {
-			existingDeskChannelId = channel.ID
-			break
-		}
-	}
+	existingDeskChannelId := findUserDeskChannelId(channels, deskCategoryId, event.User.ID)
 
 	if existingDeskChannelId != "" {
 		return
@@ -159,4 +153,22 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 		Position: 0,
 	})
 	return err
+}
+
+func findUserDeskChannelId(channels []*discordgo.Channel, deskCategoryId any, userID string) string {
+	for _, channel := range channels {
+		if channel.ParentID == deskCategoryId && userID == getChannelOwner(channel) {
+			return channel.ID
+		}
+	}
+	return ""
+}
+
+func getChannelOwner(channel *discordgo.Channel) string {
+	for _, permission := range channel.PermissionOverwrites {
+		if permission.Type == discordgo.PermissionOverwriteTypeMember && permission.Allow == discordgo.PermissionManageChannels {
+			return permission.ID
+		}
+	}
+	return ""
 }
