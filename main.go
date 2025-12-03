@@ -37,8 +37,9 @@ func main() {
 	discord.AddHandler(ready)
 	discord.AddHandler(guildCreate)
 	discord.AddHandler(guildMemberAdd)
+	discord.AddHandler(voiceStateUpdate)
 
-	discord.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers
+	discord.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers | discordgo.IntentsGuildVoiceStates
 
 	// Open the websocket and begin listening.
 	err = discord.Open()
@@ -161,6 +162,107 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 	}
 }
 
+// Show and hide user desk voice channels when connected to and disconnected from.
+func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
+	fmt.Println("voiceStateUpdate", event.ChannelID)
+	guild, err := s.Guild(event.GuildID)
+	if err != nil {
+		fmt.Println("Failed to find guild", event.GuildID, err)
+		return
+	}
+	fmt.Println(len(guild.VoiceStates))
+
+	maybeDeskCategoryId, ok := guildToDeskCategory.Load(event.GuildID)
+	if !ok {
+		fmt.Println("Failed to find deskCategory for guildId", event.GuildID)
+		return
+	}
+	deskCategoryId := maybeDeskCategoryId.(string)
+
+	// Check if user connected to a new channel
+	if event.ChannelID != "" && (event.BeforeUpdate == nil || event.BeforeUpdate.ChannelID != event.ChannelID) {
+		channel, err := s.Channel(event.ChannelID)
+		if err != nil {
+			fmt.Println("Failed to find channel", err)
+			return
+		}
+
+		if channel.ParentID != deskCategoryId {
+			fmt.Println("Not a desk channel")
+			return
+		}
+
+		handleDeskConnect(s, guild, channel)
+	}
+
+	// Check if user disconnected from a channel
+	if event.BeforeUpdate != nil && event.BeforeUpdate.ChannelID != "" && event.BeforeUpdate.ChannelID != event.ChannelID {
+		channel, err := s.Channel(event.BeforeUpdate.ChannelID)
+		if err != nil {
+			fmt.Println("Failed to find channel", err)
+			return
+		}
+
+		if channel.ParentID != deskCategoryId {
+			fmt.Println("Not a desk channel")
+			return
+		}
+
+		handleDeskDisconnect(s, guild, channel)
+	}
+}
+
+// If any user enters, make the desk visible.
+func handleDeskConnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
+	fmt.Println("User connected to desk", channel.Name)
+
+	// Skip if desk is already visible to everyone
+	for _, permission := range channel.PermissionOverwrites {
+		if permission.Type == discordgo.PermissionOverwriteTypeRole && permission.ID == guild.ID &&
+			permission.Allow&discordgo.PermissionViewChannel != 0 {
+			return
+		}
+	}
+
+	// Make desk visible to @everyone
+	fmt.Println("Enabling desk visibility", channel.ID)
+	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
+		PermissionOverwrites: append(channel.PermissionOverwrites,
+			&discordgo.PermissionOverwrite{
+				ID:    guild.ID,
+				Type:  discordgo.PermissionOverwriteTypeRole,
+				Allow: discordgo.PermissionViewChannel,
+			},
+		),
+	},
+	)
+	if err != nil {
+		fmt.Println("Failed to update channel", err)
+	}
+}
+
+// If the last user leaves, hide the desk.
+func handleDeskDisconnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
+	fmt.Println("User disconnected from desk", channel.Name)
+
+	// TODO: Skip if desk still has connected users
+
+	// Hide the desk from @everyone except the owner
+	fmt.Println("Disabling desk visibility", channel.ID)
+	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
+		PermissionOverwrites: append(channel.PermissionOverwrites,
+			&discordgo.PermissionOverwrite{
+				ID:   guild.ID,
+				Type: discordgo.PermissionOverwriteTypeRole,
+				Deny: discordgo.PermissionViewChannel,
+			},
+		),
+	})
+	if err != nil {
+		fmt.Println("Failed to update channel", err)
+	}
+}
+
 func createDeskChannel(s *discordgo.Session, guildID string, userID string, name string, deskCategoryId string) error {
 	_, err := s.GuildChannelCreateComplex(guildID, discordgo.GuildChannelCreateData{
 		Name: name,
@@ -170,6 +272,11 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 				ID:    userID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
 				Allow: discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
+			},
+			{
+				ID:   guildID, // The `@everyone` role ID matches the guild ID
+				Type: discordgo.PermissionOverwriteTypeRole,
+				Deny: discordgo.PermissionViewChannel,
 			},
 		},
 		ParentID: deskCategoryId,
