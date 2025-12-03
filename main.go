@@ -120,10 +120,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 }
 
 func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
-	name := event.Nick
-	if len(name) == 0 {
-		name = event.User.Username
-	}
+	name := event.DisplayName()
 
 	fmt.Println("guildMemberAdd", name)
 
