@@ -90,6 +90,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 		guildToDeskCategory.Store(event.ID, deskCategoryId)
 	} else {
 		fmt.Printf("Deskbot failed to find the DESKS category in %v\n", event.Name)
+		return
 	}
 
 	// TODO: paginate when mojo passes 1000 employees
