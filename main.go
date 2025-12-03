@@ -169,7 +169,7 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 			{
 				ID:    userID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionManageChannels,
+				Allow: discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
 			},
 		},
 		ParentID: deskCategoryId,
@@ -189,7 +189,8 @@ func findUserDeskChannelId(channels []*discordgo.Channel, deskCategoryId any, us
 
 func getChannelOwner(channel *discordgo.Channel) string {
 	for _, permission := range channel.PermissionOverwrites {
-		if permission.Type == discordgo.PermissionOverwriteTypeMember && permission.Allow == discordgo.PermissionManageChannels {
+		if permission.Type == discordgo.PermissionOverwriteTypeMember &&
+			permission.Allow&discordgo.PermissionManageChannels != 0 {
 			return permission.ID
 		}
 	}
