@@ -13,8 +13,10 @@ import (
 )
 
 var (
-	token               string
-	guildToDeskCategory *sync.Map
+	token                    string
+	guildToDeskCategory      *sync.Map
+	guildChannelMembersMutex *sync.Mutex
+	guildChannelMembers      map[string](map[string]int)
 )
 
 func init() {
@@ -62,6 +64,8 @@ func ready(s *discordgo.Session, event *discordgo.Ready) {
 	fmt.Println("ready")
 
 	guildToDeskCategory = new(sync.Map)
+	guildChannelMembersMutex = new(sync.Mutex)
+	guildChannelMembers = make(map[string](map[string]int))
 }
 
 func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
@@ -93,6 +97,13 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 		fmt.Printf("Deskbot failed to find the DESKS category in %v\n", event.Name)
 		return
 	}
+
+	guildChannelMembersMutex.Lock()
+	guildChannelMembers[event.ID] = make(map[string]int)
+	for _, voiceState := range event.VoiceStates {
+		guildChannelMembers[event.ID][voiceState.ChannelID] += 1
+	}
+	guildChannelMembersMutex.Unlock()
 
 	// TODO: paginate when mojo passes 1000 employees
 	members, err := s.GuildMembers(event.ID, "", 1000)
@@ -216,6 +227,14 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 func handleDeskConnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
 	fmt.Println("User connected to desk", channel.Name)
 
+	guildChannelMembersMutex.Lock()
+	channelMembers := guildChannelMembers[guild.ID][channel.ID]
+	channelMembers += 1
+	guildChannelMembers[guild.ID][channel.ID] = channelMembers
+	guildChannelMembersMutex.Unlock()
+
+	fmt.Println("Active users for desk", channelMembers, channel.ID)
+
 	// Skip if desk is already visible to everyone
 	for _, permission := range channel.PermissionOverwrites {
 		if permission.Type == discordgo.PermissionOverwriteTypeRole && permission.ID == guild.ID &&
@@ -245,7 +264,18 @@ func handleDeskConnect(s *discordgo.Session, guild *discordgo.Guild, channel *di
 func handleDeskDisconnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
 	fmt.Println("User disconnected from desk", channel.Name)
 
-	// TODO: Skip if desk still has connected users
+	guildChannelMembersMutex.Lock()
+	channelMembers := guildChannelMembers[guild.ID][channel.ID]
+	channelMembers = max(0, channelMembers-1)
+	guildChannelMembers[guild.ID][channel.ID] = channelMembers
+	guildChannelMembersMutex.Unlock()
+
+	fmt.Println("Active users for desk", channelMembers, channel.ID)
+
+	// Skip if desk still has connected users
+	if channelMembers != 0 {
+		return
+	}
 
 	// Hide the desk from @everyone except the owner
 	fmt.Println("Disabling desk visibility", channel.ID)
