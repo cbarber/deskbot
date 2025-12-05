@@ -183,7 +183,6 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 		fmt.Println("Failed to find guild", event.GuildID, err)
 		return
 	}
-	fmt.Println(len(guild.VoiceStates))
 
 	maybeDeskCategoryId, ok := guildToDeskCategory.Load(event.GuildID)
 	if !ok {
@@ -271,8 +270,6 @@ func handleDeskDisconnect(s *discordgo.Session, guild *discordgo.Guild, channel 
 	channelMembers = max(0, channelMembers-1)
 	guildChannelMembers[guild.ID][channel.ID] = channelMembers
 	guildChannelMembersMutex.Unlock()
-
-	fmt.Println("Active users for desk", channelMembers, channel.ID)
 
 	// Skip if desk still has connected users
 	if channelMembers != 0 {
