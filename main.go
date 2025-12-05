@@ -303,6 +303,11 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 				Allow: discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
 			},
 			{
+				ID:    s.State.User.ID,
+				Type:  discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionManageRoles | discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
+			},
+			{
 				ID:   guildID, // The `@everyone` role ID matches the guild ID
 				Type: discordgo.PermissionOverwriteTypeRole,
 				Deny: discordgo.PermissionViewChannel,
@@ -353,6 +358,11 @@ func resetDeskPermissions(s *discordgo.Session, channel *discordgo.Channel, user
 				ID:    userId,
 				Type:  discordgo.PermissionOverwriteTypeMember,
 				Allow: requiredUserPermission,
+			},
+			&discordgo.PermissionOverwrite{
+				ID:    s.State.User.ID,
+				Type:  discordgo.PermissionOverwriteTypeMember,
+				Allow: discordgo.PermissionManageRoles | discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
 			},
 			&discordgo.PermissionOverwrite{
 				ID:   channel.GuildID,
