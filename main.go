@@ -62,6 +62,7 @@ func main() {
 	<-sc
 
 	fmt.Println("Closing discord session...")
+	endSession(discord)
 	discord.Close()
 }
 
@@ -118,10 +119,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 	}
 
 	for _, member := range members {
-		if member.User.Bot {
-			continue
-		}
-		if member.User.System {
+		if member.User.Bot || member.User.System {
 			continue
 		}
 
@@ -146,6 +144,26 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 				hideDeskChannel(s, event.Guild, deskChannel)
 			}
 			guildChannelMembersMutex.Unlock()
+		}
+	}
+}
+
+func endSession(s *discordgo.Session) {
+	for _, guild := range s.State.Guilds {
+		showAllDeskChannels(s, guild)
+	}
+}
+
+func showAllDeskChannels(s *discordgo.Session, guild *discordgo.Guild) {
+	maybeDeskCategoryId, ok := guildToDeskCategory.Load(guild.ID)
+	if !ok {
+		return
+	}
+	deskCategoryId := maybeDeskCategoryId.(string)
+
+	for _, channel := range guild.Channels {
+		if channel.ParentID == deskCategoryId && getChannelOwner(channel, s.State.User.ID) != "" {
+			showDeskChannel(s, guild, channel)
 		}
 	}
 }
