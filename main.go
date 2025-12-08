@@ -12,6 +12,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+const (
+	USER_DESK_PERMISSIONS int64 = discordgo.PermissionViewChannel | discordgo.PermissionManageChannels
+	BOT_DESK_PERMISSIONS  int64 = discordgo.PermissionViewChannel
+)
+
 var (
 	token                    string
 	guildToDeskCategory      *sync.Map
@@ -128,7 +133,9 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 				fmt.Printf("Failed to create desk channel for user %s: %v\n", member.DisplayName(), err)
 			}
 		} else {
-			resetDeskPermissions(s, deskChannel, member.User.ID)
+			if err := resetDeskPermissions(s, deskChannel, member.User.ID); err != nil {
+				fmt.Printf("Failed to reset desk permissions for user %s: %v\n", member.DisplayName(), err)
+			}
 		}
 	}
 }
@@ -300,12 +307,12 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 			{
 				ID:    userID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
+				Allow: USER_DESK_PERMISSIONS,
 			},
 			{
 				ID:    s.State.User.ID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionManageRoles | discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
+				Allow: BOT_DESK_PERMISSIONS,
 			},
 			{
 				ID:   guildID, // The `@everyone` role ID matches the guild ID
@@ -338,17 +345,24 @@ func getChannelOwner(channel *discordgo.Channel) string {
 	return ""
 }
 
-func resetDeskPermissions(s *discordgo.Session, channel *discordgo.Channel, userId string) {
-	var requiredUserPermission int64 = discordgo.PermissionViewChannel | discordgo.PermissionManageChannels
+func resetDeskPermissions(s *discordgo.Session, channel *discordgo.Channel, userId string) error {
+	var userPermissions int64
+	var botPermissions int64
 
 	for _, permission := range channel.PermissionOverwrites {
-		if permission.Type == discordgo.PermissionOverwriteTypeMember && permission.ID == userId {
-			if permission.Allow&requiredUserPermission == requiredUserPermission {
-				return
-			} else {
-				break
+		if permission.Type == discordgo.PermissionOverwriteTypeMember {
+			if permission.ID == userId {
+				userPermissions = permission.Allow
+			}
+			if permission.ID == s.State.User.ID {
+				botPermissions = permission.Allow
 			}
 		}
+	}
+
+	if (userPermissions&USER_DESK_PERMISSIONS == USER_DESK_PERMISSIONS) &&
+		(botPermissions&BOT_DESK_PERMISSIONS == BOT_DESK_PERMISSIONS) {
+		return nil
 	}
 
 	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
@@ -357,12 +371,12 @@ func resetDeskPermissions(s *discordgo.Session, channel *discordgo.Channel, user
 			&discordgo.PermissionOverwrite{
 				ID:    userId,
 				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: requiredUserPermission,
+				Allow: userPermissions | USER_DESK_PERMISSIONS,
 			},
 			&discordgo.PermissionOverwrite{
 				ID:    s.State.User.ID,
 				Type:  discordgo.PermissionOverwriteTypeMember,
-				Allow: discordgo.PermissionManageRoles | discordgo.PermissionManageChannels | discordgo.PermissionViewChannel,
+				Allow: botPermissions | BOT_DESK_PERMISSIONS,
 			},
 			&discordgo.PermissionOverwrite{
 				ID:   channel.GuildID,
@@ -371,7 +385,5 @@ func resetDeskPermissions(s *discordgo.Session, channel *discordgo.Channel, user
 			},
 		),
 	})
-	if err != nil {
-		fmt.Printf("Failed to update desk permissions for user %s: %v\n", userId, err)
-	}
+	return err
 }
