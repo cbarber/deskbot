@@ -211,7 +211,8 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 			return
 		}
 
-		handleDeskConnect(s, guild, channel)
+		handleDeskConnect(guild.ID, channel)
+		showDeskChannel(s, guild, channel)
 	}
 
 	// Check if user disconnected from a channel
@@ -227,31 +228,37 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 			return
 		}
 
-		handleDeskDisconnect(s, guild, channel)
+		channelMembers := handleDeskDisconnect(guild.ID, channel)
+		if channelMembers == 0 {
+			hideDeskChannel(s, guild, channel)
+		}
 	}
 }
 
 // If any user enters, make the desk visible.
-func handleDeskConnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
-	fmt.Println("User connected to desk", channel.Name)
+func handleDeskConnect(guildID string, channel *discordgo.Channel) int {
+	fmt.Println("User connected to desk", channel.ID)
 
 	guildChannelMembersMutex.Lock()
-	channelMembers := guildChannelMembers[guild.ID][channel.ID]
+	channelMembers := guildChannelMembers[guildID][channel.ID]
 	channelMembers += 1
-	guildChannelMembers[guild.ID][channel.ID] = channelMembers
+	guildChannelMembers[guildID][channel.ID] = channelMembers
 	guildChannelMembersMutex.Unlock()
 
-	fmt.Println("Active users for desk", channelMembers, channel.ID)
+	return channelMembers
+}
 
-	// Skip if desk is already visible to everyone
+// Make desk visible to @everyone
+func showDeskChannel(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
 	for _, permission := range channel.PermissionOverwrites {
-		if permission.Type == discordgo.PermissionOverwriteTypeRole && permission.ID == guild.ID &&
-			permission.Allow&discordgo.PermissionViewChannel != 0 {
-			return
+		if permission.Type == discordgo.PermissionOverwriteTypeRole && permission.ID == guild.ID {
+			if permission.Allow&discordgo.PermissionViewChannel != 0 && permission.Deny&discordgo.PermissionViewChannel == 0 {
+				return
+			}
+			break
 		}
 	}
 
-	// Make desk visible to @everyone
 	fmt.Println("Enabling desk visibility", channel.ID)
 	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
 		PermissionOverwrites: append(channel.PermissionOverwrites,
@@ -269,21 +276,29 @@ func handleDeskConnect(s *discordgo.Session, guild *discordgo.Guild, channel *di
 }
 
 // If the last user leaves, hide the desk.
-func handleDeskDisconnect(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
-	fmt.Println("User disconnected from desk", channel.Name)
+func handleDeskDisconnect(guildID string, channel *discordgo.Channel) int {
+	fmt.Println("User disconnected from desk", channel.ID)
 
 	guildChannelMembersMutex.Lock()
-	channelMembers := guildChannelMembers[guild.ID][channel.ID]
+	channelMembers := guildChannelMembers[guildID][channel.ID]
 	channelMembers = max(0, channelMembers-1)
-	guildChannelMembers[guild.ID][channel.ID] = channelMembers
+	guildChannelMembers[guildID][channel.ID] = channelMembers
 	guildChannelMembersMutex.Unlock()
 
-	// Skip if desk still has connected users
-	if channelMembers != 0 {
-		return
+	return channelMembers
+}
+
+// Hide the desk from @everyone except the owner
+func hideDeskChannel(s *discordgo.Session, guild *discordgo.Guild, channel *discordgo.Channel) {
+	for _, permission := range channel.PermissionOverwrites {
+		if permission.Type == discordgo.PermissionOverwriteTypeRole && permission.ID == guild.ID {
+			if permission.Allow&discordgo.PermissionViewChannel == 0 && permission.Deny&discordgo.PermissionViewChannel != 0 {
+				return
+			}
+			break
+		}
 	}
 
-	// Hide the desk from @everyone except the owner
 	fmt.Println("Disabling desk visibility", channel.ID)
 	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
 		PermissionOverwrites: append(channel.PermissionOverwrites,
