@@ -125,7 +125,7 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 			continue
 		}
 
-		deskChannel := findUserDeskChannel(event.Channels, deskCategoryId, member.User.ID)
+		deskChannel := findUserDeskChannel(event.Channels, deskCategoryId, member.User.ID, s.State.User.ID)
 		if deskChannel == nil {
 			fmt.Printf("Missing desk channel for user %s\n", member.DisplayName())
 			err := createDeskChannel(s, event.ID, member.User.ID, member.DisplayName(), deskCategoryId)
@@ -158,7 +158,7 @@ func guildMemberAdd(s *discordgo.Session, event *discordgo.GuildMemberAdd) {
 		return
 	}
 
-	existingDeskChannel := findUserDeskChannel(channels, deskCategoryId, event.User.ID)
+	existingDeskChannel := findUserDeskChannel(channels, deskCategoryId, event.User.ID, s.State.User.ID)
 
 	if existingDeskChannel != nil {
 		return
@@ -326,18 +326,19 @@ func createDeskChannel(s *discordgo.Session, guildID string, userID string, name
 	return err
 }
 
-func findUserDeskChannel(channels []*discordgo.Channel, deskCategoryId any, userID string) *discordgo.Channel {
+func findUserDeskChannel(channels []*discordgo.Channel, deskCategoryId any, userID string, botID string) *discordgo.Channel {
 	for _, channel := range channels {
-		if channel.ParentID == deskCategoryId && userID == getChannelOwner(channel) {
+		if channel.ParentID == deskCategoryId && userID == getChannelOwner(channel, botID) {
 			return channel
 		}
 	}
 	return nil
 }
 
-func getChannelOwner(channel *discordgo.Channel) string {
+func getChannelOwner(channel *discordgo.Channel, botID string) string {
 	for _, permission := range channel.PermissionOverwrites {
 		if permission.Type == discordgo.PermissionOverwriteTypeMember &&
+			permission.ID != botID &&
 			permission.Allow&discordgo.PermissionManageChannels != 0 {
 			return permission.ID
 		}
