@@ -131,11 +131,21 @@ func guildCreate(s *discordgo.Session, event *discordgo.GuildCreate) {
 			err := createDeskChannel(s, event.ID, member.User.ID, member.DisplayName(), deskCategoryId)
 			if err != nil {
 				fmt.Printf("Failed to create desk channel for user %s: %v\n", member.DisplayName(), err)
+				continue
 			}
 		} else {
 			if err := resetDeskPermissions(s, deskChannel, member.User.ID); err != nil {
 				fmt.Printf("Failed to reset desk permissions for user %s: %v\n", member.DisplayName(), err)
+				continue
 			}
+
+			guildChannelMembersMutex.Lock()
+			if guildChannelMembers[event.ID][deskChannel.ID] != 0 {
+				showDeskChannel(s, event.Guild, deskChannel)
+			} else {
+				hideDeskChannel(s, event.Guild, deskChannel)
+			}
+			guildChannelMembersMutex.Unlock()
 		}
 	}
 }
