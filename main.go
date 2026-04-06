@@ -8,8 +8,10 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/cbarber/deskbot/prbuddy"
 )
 
 const (
@@ -22,6 +24,8 @@ var (
 	guildToDeskCategory      *sync.Map
 	guildChannelMembersMutex *sync.Mutex
 	guildChannelMembers      map[string](map[string]int)
+
+	buddy *prbuddy.Bot
 )
 
 func init() {
@@ -41,10 +45,19 @@ func main() {
 		return
 	}
 
+	buddy, err = prbuddy.New("./prbuddy.json", func(guildID string, result prbuddy.Result) {
+		postPairings(discord, guildID, result)
+	})
+	if err != nil {
+		fmt.Println("Error initialising PR buddy:", err)
+		return
+	}
+
 	discord.AddHandler(ready)
 	discord.AddHandler(guildCreate)
 	discord.AddHandler(guildMemberAdd)
 	discord.AddHandler(voiceStateUpdate)
+	discord.AddHandler(interactionCreate)
 
 	discord.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers | discordgo.IntentsGuildVoiceStates
 
@@ -55,6 +68,13 @@ func main() {
 		return
 	}
 
+	if err := registerCommands(discord); err != nil {
+		fmt.Println("Error registering slash commands:", err)
+		// Non-fatal — bot still works without slash commands.
+	}
+
+	buddy.StartScheduler()
+
 	fmt.Println("Deskbot is now running.  Press CTRL-C to exit.")
 
 	sc := make(chan os.Signal, 1)
@@ -62,9 +82,14 @@ func main() {
 	<-sc
 
 	fmt.Println("Closing discord session...")
+	buddy.Stop()
 	endSession(discord)
 	discord.Close()
 }
+
+// ---------------------------------------------------------------------------
+// Discord event handlers
+// ---------------------------------------------------------------------------
 
 func ready(s *discordgo.Session, event *discordgo.Ready) {
 	fmt.Println("ready")
@@ -262,6 +287,278 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Slash command registration and dispatch
+// ---------------------------------------------------------------------------
+
+// prbuddyCommand is the full /prbuddy command definition registered with Discord.
+var prbuddyCommand = &discordgo.ApplicationCommand{
+	Name:        "prbuddy",
+	Description: "PR buddy pairing system",
+	Options: []*discordgo.ApplicationCommandOption{
+		{
+			Name:        "member",
+			Description: "Manage team members",
+			Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:        "add",
+					Description: "Add a member to the PR buddy team",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Name:        "user",
+							Description: "The Discord user to add",
+							Type:        discordgo.ApplicationCommandOptionUser,
+							Required:    true,
+						},
+					},
+				},
+				{
+					Name:        "remove",
+					Description: "Remove a member from the PR buddy team",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Name:        "user",
+							Description: "The Discord user to remove",
+							Type:        discordgo.ApplicationCommandOptionUser,
+							Required:    true,
+						},
+					},
+				},
+			},
+		},
+		{
+			Name:        "pto",
+			Description: "Manage member PTO",
+			Type:        discordgo.ApplicationCommandOptionSubCommandGroup,
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:        "set",
+					Description: "Set a PTO window for a member (dates: YYYY-MM-DD)",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Name:        "user",
+							Description: "The team member",
+							Type:        discordgo.ApplicationCommandOptionUser,
+							Required:    true,
+						},
+						{
+							Name:        "leave_on",
+							Description: "First day of absence (YYYY-MM-DD)",
+							Type:        discordgo.ApplicationCommandOptionString,
+							Required:    true,
+						},
+						{
+							Name:        "returns_on",
+							Description: "First day back (YYYY-MM-DD)",
+							Type:        discordgo.ApplicationCommandOptionString,
+							Required:    true,
+						},
+					},
+				},
+				{
+					Name:        "clear",
+					Description: "Clear a member's PTO",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Name:        "user",
+							Description: "The team member",
+							Type:        discordgo.ApplicationCommandOptionUser,
+							Required:    true,
+						},
+					},
+				},
+			},
+		},
+		{
+			Name:        "generate",
+			Description: "Generate this week's PR buddy pairings now",
+			Type:        discordgo.ApplicationCommandOptionSubCommand,
+		},
+	},
+}
+
+func registerCommands(s *discordgo.Session) error {
+	_, err := s.ApplicationCommandCreate(s.State.User.ID, "", prbuddyCommand)
+	return err
+}
+
+func interactionCreate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type != discordgo.InteractionApplicationCommand {
+		return
+	}
+	data := i.ApplicationCommandData()
+	if data.Name != "prbuddy" {
+		return
+	}
+	handlePRBuddy(s, i)
+}
+
+func handlePRBuddy(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	opts := i.ApplicationCommandData().Options
+	if len(opts) == 0 {
+		respond(s, i, "Unknown subcommand.")
+		return
+	}
+
+	switch opts[0].Name {
+	case "member":
+		handleMember(s, i, opts[0].Options)
+	case "pto":
+		handlePTO(s, i, opts[0].Options)
+	case "generate":
+		handleGenerate(s, i)
+	default:
+		respond(s, i, "Unknown subcommand.")
+	}
+}
+
+func handleMember(s *discordgo.Session, i *discordgo.InteractionCreate, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+	if len(opts) == 0 {
+		respond(s, i, "Unknown member subcommand.")
+		return
+	}
+	switch opts[0].Name {
+	case "add":
+		user := opts[0].Options[0].UserValue(s)
+		name := user.Username
+		if err := buddy.AddMember(i.GuildID, user.ID, name); err != nil {
+			respond(s, i, fmt.Sprintf("Failed to add member: %v", err))
+			return
+		}
+		respond(s, i, fmt.Sprintf("Added **%s** to the PR buddy team.", name))
+
+	case "remove":
+		user := opts[0].Options[0].UserValue(s)
+		if err := buddy.RemoveMember(i.GuildID, user.ID); err != nil {
+			respond(s, i, fmt.Sprintf("Failed to remove member: %v", err))
+			return
+		}
+		respond(s, i, fmt.Sprintf("Removed **%s** from the PR buddy team.", user.Username))
+
+	default:
+		respond(s, i, "Unknown member subcommand.")
+	}
+}
+
+func handlePTO(s *discordgo.Session, i *discordgo.InteractionCreate, opts []*discordgo.ApplicationCommandInteractionDataOption) {
+	if len(opts) == 0 {
+		respond(s, i, "Unknown pto subcommand.")
+		return
+	}
+	switch opts[0].Name {
+	case "set":
+		subOpts := opts[0].Options
+		user := subOpts[0].UserValue(s)
+		leaveOnStr := subOpts[1].StringValue()
+		returnsOnStr := subOpts[2].StringValue()
+
+		leaveOn, err := time.ParseInLocation("2006-01-02", leaveOnStr, time.Local)
+		if err != nil {
+			respond(s, i, fmt.Sprintf("Invalid leave_on date %q — use YYYY-MM-DD.", leaveOnStr))
+			return
+		}
+		returnsOn, err := time.ParseInLocation("2006-01-02", returnsOnStr, time.Local)
+		if err != nil {
+			respond(s, i, fmt.Sprintf("Invalid returns_on date %q — use YYYY-MM-DD.", returnsOnStr))
+			return
+		}
+
+		if err := buddy.SetPTO(i.GuildID, user.ID, leaveOn, returnsOn); err != nil {
+			respond(s, i, fmt.Sprintf("Failed to set PTO: %v", err))
+			return
+		}
+		respond(s, i, fmt.Sprintf("PTO set for **%s**: away %s → back %s.", user.Username, leaveOnStr, returnsOnStr))
+
+	case "clear":
+		user := opts[0].Options[0].UserValue(s)
+		if err := buddy.ClearPTO(i.GuildID, user.ID); err != nil {
+			respond(s, i, fmt.Sprintf("Failed to clear PTO: %v", err))
+			return
+		}
+		respond(s, i, fmt.Sprintf("PTO cleared for **%s**.", user.Username))
+
+	default:
+		respond(s, i, "Unknown pto subcommand.")
+	}
+}
+
+func handleGenerate(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	result := buddy.Generate(i.GuildID, time.Now())
+	msg := formatPairings(result)
+	respond(s, i, msg)
+	// Also post to #general so the team sees it.
+	postPairings(s, i.GuildID, result)
+}
+
+// ---------------------------------------------------------------------------
+// Pairing output helpers
+// ---------------------------------------------------------------------------
+
+// postPairings finds the guild's #general channel and posts the pairing result.
+func postPairings(s *discordgo.Session, guildID string, result prbuddy.Result) {
+	channels, err := s.GuildChannels(guildID)
+	if err != nil {
+		fmt.Println("prbuddy: failed to fetch channels:", err)
+		return
+	}
+	var generalID string
+	for _, ch := range channels {
+		if ch.Type == discordgo.ChannelTypeGuildText && strings.ToLower(ch.Name) == "general" {
+			generalID = ch.ID
+			break
+		}
+	}
+	if generalID == "" {
+		fmt.Println("prbuddy: no #general channel found in guild", guildID)
+		return
+	}
+	msg := formatPairings(result)
+	if _, err := s.ChannelMessageSend(generalID, msg); err != nil {
+		fmt.Println("prbuddy: failed to post pairings:", err)
+	}
+}
+
+// formatPairings renders a Result as a human-readable Discord message.
+func formatPairings(result prbuddy.Result) string {
+	if len(result.Pairs) == 0 {
+		return fmt.Sprintf("No PR buddy pairings this week (%s) — not enough available developers.",
+			result.Week.Format("Jan 2, 2006"))
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("**PR Buddy pairings — week of %s**\n", result.Week.Format("Jan 2, 2006")))
+	for idx, p := range result.Pairs {
+		sb.WriteString(fmt.Sprintf("%d. <@%s> ↔ <@%s>\n", idx+1, p.A.UserID, p.B.UserID))
+	}
+	if result.SittingOut != nil {
+		sb.WriteString(fmt.Sprintf("\n_<@%s> is sitting out this week._", result.SittingOut.UserID))
+	}
+	return sb.String()
+}
+
+// respond sends an ephemeral interaction reply.
+func respond(s *discordgo.Session, i *discordgo.InteractionCreate, msg string) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: msg,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+	if err != nil {
+		fmt.Println("Failed to respond to interaction:", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Desk channel helpers (unchanged)
+// ---------------------------------------------------------------------------
 
 // If any user enters, make the desk visible.
 func handleDeskConnect(guildID string, channel *discordgo.Channel) int {
