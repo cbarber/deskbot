@@ -229,11 +229,16 @@ func TestAvailable_ReturnsOnIsSelf_Available(t *testing.T) {
 	_ = b.AddMember("g1", "u1", "Alice")
 	_ = b.AddMember("g1", "u2", "Bob")
 
-	monday := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
+	et, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Errorf("Failed to load timezone: %s", err)
+	}
+
+	monday := time.Date(2026, 4, 6, 0, 0, 0, 0, et)
 
 	_ = b.SetPTO(
 		"g1", "u1",
-		time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, 3, 30, 0, 0, 0, 0, et),
 		monday, // returns on the Monday itself — should be available
 	)
 
