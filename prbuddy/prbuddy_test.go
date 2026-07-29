@@ -204,7 +204,8 @@ func TestAvailable_PTOExcludesMember(t *testing.T) {
 	_ = b.AddMember("g1", "u2", "Bob")
 
 	// Alice is on PTO for the week of April 6.
-	_ = b.SetPTO("g1", "u1",
+	_ = b.SetPTO(
+		"g1", "u1",
 		time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 4, 13, 0, 0, 0, 0, time.UTC),
 	)
@@ -230,7 +231,8 @@ func TestAvailable_ReturnsOnIsSelf_Available(t *testing.T) {
 
 	monday := time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)
 
-	_ = b.SetPTO("g1", "u1",
+	_ = b.SetPTO(
+		"g1", "u1",
 		time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC),
 		monday, // returns on the Monday itself — should be available
 	)
@@ -251,7 +253,8 @@ func TestAvailable_PTOBeforeWeek_Available(t *testing.T) {
 
 	monday := time.Date(2026, 4, 13, 0, 0, 0, 0, time.UTC)
 
-	_ = b.SetPTO("g1", "u1",
+	_ = b.SetPTO(
+		"g1", "u1",
 		time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC), // returns before the next Monday
 	)
@@ -424,7 +427,8 @@ func TestPersistence_RoundTrip(t *testing.T) {
 
 	_ = b1.AddMember("g1", "u1", "Alice")
 	_ = b1.AddMember("g1", "u2", "Bob")
-	_ = b1.SetPTO("g1", "u1",
+	_ = b1.SetPTO(
+		"g1", "u1",
 		time.Date(2026, 4, 10, 0, 0, 0, 0, time.UTC),
 		time.Date(2026, 4, 17, 0, 0, 0, 0, time.UTC),
 	)

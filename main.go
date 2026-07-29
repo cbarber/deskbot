@@ -585,15 +585,17 @@ func showDeskChannel(s *discordgo.Session, guild *discordgo.Guild, channel *disc
 	}
 
 	fmt.Println("Enabling desk visibility", channel.ID)
-	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
-		PermissionOverwrites: append(channel.PermissionOverwrites,
-			&discordgo.PermissionOverwrite{
-				ID:    guild.ID,
-				Type:  discordgo.PermissionOverwriteTypeRole,
-				Allow: discordgo.PermissionViewChannel,
-			},
-		),
-	},
+	_, err := s.ChannelEdit(
+		channel.ID, &discordgo.ChannelEdit{
+			PermissionOverwrites: append(
+				channel.PermissionOverwrites,
+				&discordgo.PermissionOverwrite{
+					ID:    guild.ID,
+					Type:  discordgo.PermissionOverwriteTypeRole,
+					Allow: discordgo.PermissionViewChannel,
+				},
+			),
+		},
 	)
 	if err != nil {
 		fmt.Println("Failed to update channel", err)
@@ -626,7 +628,8 @@ func hideDeskChannel(s *discordgo.Session, guild *discordgo.Guild, channel *disc
 
 	fmt.Println("Disabling desk visibility", channel.ID)
 	_, err := s.ChannelEdit(channel.ID, &discordgo.ChannelEdit{
-		PermissionOverwrites: append(channel.PermissionOverwrites,
+		PermissionOverwrites: append(
+			channel.PermissionOverwrites,
 			&discordgo.PermissionOverwrite{
 				ID:   guild.ID,
 				Type: discordgo.PermissionOverwriteTypeRole,
