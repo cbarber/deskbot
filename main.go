@@ -252,40 +252,52 @@ func voiceStateUpdate(s *discordgo.Session, event *discordgo.VoiceStateUpdate) {
 	deskCategoryId := maybeDeskCategoryId.(string)
 
 	// Check if user connected to a new channel
-	if event.ChannelID != "" && (event.BeforeUpdate == nil || event.BeforeUpdate.ChannelID != event.ChannelID) {
-		channel, err := s.Channel(event.ChannelID)
-		if err != nil {
-			fmt.Println("Failed to find channel", err)
-			return
-		}
-
-		if channel.ParentID != deskCategoryId {
-			fmt.Println("Not a desk channel")
-			return
-		}
-
-		handleDeskConnect(guild.ID, channel)
-		showDeskChannel(s, guild, channel)
-	}
+	handleDestinationChannel(event, s, deskCategoryId, guild)
 
 	// Check if user disconnected from a channel
-	if event.BeforeUpdate != nil && event.BeforeUpdate.ChannelID != "" && event.BeforeUpdate.ChannelID != event.ChannelID {
-		channel, err := s.Channel(event.BeforeUpdate.ChannelID)
-		if err != nil {
-			fmt.Println("Failed to find channel", err)
-			return
-		}
+	handleSourceChanel(event, s, deskCategoryId, guild)
+}
 
-		if channel.ParentID != deskCategoryId {
-			fmt.Println("Not a desk channel")
-			return
-		}
-
-		channelMembers := handleDeskDisconnect(guild.ID, channel)
-		if channelMembers == 0 {
-			hideDeskChannel(s, guild, channel)
-		}
+func handleSourceChanel(event *discordgo.VoiceStateUpdate, s *discordgo.Session, deskCategoryId string, guild *discordgo.Guild) {
+	if event.BeforeUpdate == nil || event.BeforeUpdate.ChannelID == "" || event.BeforeUpdate.ChannelID == event.ChannelID {
+		return
 	}
+
+	channel, err := s.Channel(event.BeforeUpdate.ChannelID)
+	if err != nil {
+		fmt.Println("Failed to find channel", err)
+		return
+	}
+
+	if channel.ParentID != deskCategoryId {
+		fmt.Println("Not a desk channel")
+		return
+	}
+
+	channelMembers := handleDeskDisconnect(guild.ID, channel)
+	if channelMembers == 0 {
+		hideDeskChannel(s, guild, channel)
+	}
+}
+
+func handleDestinationChannel(event *discordgo.VoiceStateUpdate, s *discordgo.Session, deskCategoryId string, guild *discordgo.Guild) {
+	if event.ChannelID == "" || (event.BeforeUpdate != nil && event.BeforeUpdate.ChannelID == event.ChannelID) {
+		return
+	}
+
+	channel, err := s.Channel(event.ChannelID)
+	if err != nil {
+		fmt.Println("Failed to find channel", err)
+		return
+	}
+
+	if channel.ParentID != deskCategoryId {
+		fmt.Println("Not a desk channel")
+		return
+	}
+
+	handleDeskConnect(guild.ID, channel)
+	showDeskChannel(s, guild, channel)
 }
 
 // ---------------------------------------------------------------------------
